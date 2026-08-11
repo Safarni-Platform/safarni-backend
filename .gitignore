@@ -4,3 +4,5 @@ dist
 coverage
 config.bat
 uploads/
+.env
+.env.*
