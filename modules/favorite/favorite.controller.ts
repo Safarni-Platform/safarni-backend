@@ -2,7 +2,11 @@ import { Router, Request, Response } from "express";
 import { authMiddleware } from "../../middleware/auth.middleware";
 import { asyncHandler } from "../../utils/response/async.handler";
 import { successResponse } from "../../utils/response/success.response";
-import { BadRequestException, ConflictException, NotFoundException } from "../../utils/response/error.response";
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from "../../utils/response/error.response";
 import FavoriteModel from "../../DB/models/favorite.model";
 import TourModel from "../../DB/models/tour.model";
 import HotelModel from "../../DB/models/hotel.model";
@@ -11,6 +15,8 @@ import FlightModel from "../../DB/models/flight.model";
 
 const favoriteRouter = Router();
 
+type FavoriteCategory = "tours" | "hotels" | "cars" | "flights";
+
 const modelsByCategory: Record<string, any> = {
   tours: TourModel,
   hotels: HotelModel,
@@ -18,7 +24,7 @@ const modelsByCategory: Record<string, any> = {
   flights: FlightModel,
 };
 
-// POST /favorites  — add an item to my favorites
+// POST /favorites — add an item to my favorites
 favoriteRouter.post(
   "/",
   authMiddleware,
@@ -33,12 +39,18 @@ favoriteRouter.post(
     }
 
     const item = await modelsByCategory[category].findById(itemId);
+
     if (!item) {
       throw new NotFoundException(`${category.slice(0, -1)} not found`);
     }
 
     try {
-      const favorite = await FavoriteModel.create({ userId, category, itemId });
+      const favorite = await FavoriteModel.create({
+        userId,
+        category,
+        itemId,
+      });
+
       return successResponse({
         res,
         statusCode: 201,
@@ -47,8 +59,11 @@ favoriteRouter.post(
       });
     } catch (err: any) {
       if (err.code === 11000) {
-        throw new ConflictException("This item is already in your favorites");
+        throw new ConflictException(
+          "This item is already in your favorites"
+        );
       }
+
       throw err;
     }
   })
@@ -60,7 +75,15 @@ favoriteRouter.delete(
   authMiddleware,
   asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).credentials.user._id;
-    const { category, itemId } = req.params;
+    const { category: categoryParam, itemId } = req.params;
+
+    if (!modelsByCategory[categoryParam]) {
+      throw new BadRequestException(
+        "category must be one of: tours, hotels, cars, flights"
+      );
+    }
+
+    const category = categoryParam as FavoriteCategory;
 
     const favorite = await FavoriteModel.findOneAndDelete({
       userId,
@@ -85,17 +108,23 @@ favoriteRouter.get(
   authMiddleware,
   asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).credentials.user._id;
-    const favorites = await FavoriteModel.find({ userId }).sort({ createdAt: -1 });
+
+    const favorites = await FavoriteModel.find({ userId }).sort({
+      createdAt: -1,
+    });
 
     const withDetails = await Promise.all(
       favorites.map(async (fav) => {
-        const item = await modelsByCategory[fav.category].findById(fav.itemId);
+        const item = await modelsByCategory[fav.category].findById(
+          fav.itemId
+        );
+
         return {
           favoriteId: fav._id,
           category: fav.category,
           itemId: fav.itemId,
           addedAt: fav.createdAt,
-          item, // null if the item was later deleted
+          item,
         };
       })
     );
